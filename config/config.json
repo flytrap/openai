@@ -5,7 +5,10 @@
     "备注": "代理格式一般为 socks5://127.0.0.1:7890，端口查看自己的软件"
   },
   "openai": {
-    "key": ""
+    "key": "",
+    "model": "gpt-3.5-turbo",
+    "maxMsg": 1000,
+    "slowMsg": "请稍等10s后复制问题再问我一遍"
   },
   "wechat": {
     "token": ""

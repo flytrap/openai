@@ -22,6 +22,8 @@ const (
 	exchangeRate = 6.9
 )
 
+var userData sync.Map
+
 var totaltokens int64
 
 var (
@@ -41,6 +43,7 @@ func init() {
 type request struct {
 	Model    string       `json:"model"`
 	Messages []reqMessage `json:"messages"`
+	User     string       `json:"user"`
 }
 type reqMessage struct {
 	Role    string `json:"role"`
@@ -58,8 +61,7 @@ type response struct {
 	// Created int                    `json:"created"`
 	// Model   string                 `json:"model"`
 	Choices []choiceItem `json:"choices"`
-	// Usage   map[string]interface{} `json:"usage"`
-	Error struct {
+	Error   struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
@@ -72,7 +74,7 @@ type choiceItem struct {
 
 // OpenAI可能无法在希望的时间内做出回复
 // 使用goroutine + channel 的形式，不管是否能及时回复用户，后台都打印结果
-func Query(msg string, timeout time.Duration) string {
+func Query(userID string, msg string, timeout time.Duration) string {
 	ch := make(chan string, 1)
 	ctx, candel := context.WithTimeout(context.Background(), timeout)
 	defer candel()
@@ -93,7 +95,7 @@ func Query(msg string, timeout time.Duration) string {
 	resultCache.Store(msg, MsgWait)
 
 	go func(msg string, ctx context.Context, ch chan string) {
-		result, err := completions(msg, time.Second*180)
+		result, err := completions(userID, msg, time.Second*180)
 		if err != nil {
 			result = "发生错误「" + err.Error() + "」，您重试一下"
 		}
@@ -111,14 +113,45 @@ func Query(msg string, timeout time.Duration) string {
 	select {
 	case result = <-ch:
 	case <-ctx.Done():
-		result = "请稍等10s后复制问题再问我一遍"
+		result = config.C.OpenAI.SlowMsg
 	}
 
 	return result
 }
 
+func loadHistoryMsg(userID string, msg string) (n []reqMessage) {
+	v, ok := userData.Load(userID)
+	if ok {
+		n = append(v.([]reqMessage), reqMessage{
+			Role:    "user",
+			Content: msg,
+		})
+	} else {
+		n = []reqMessage{{
+			Role:    "user",
+			Content: msg,
+		}}
+	}
+	userData.Store(userID, n)
+	return n
+}
+
+func saveSystemHistoryMsg(userID string, msg string) {
+	v, ok := userData.Load(userID)
+	if ok {
+		n := append(v.([]reqMessage), reqMessage{
+			Role:    "system",
+			Content: msg,
+		})
+		if len(n) > config.C.OpenAI.MaxMsg {
+			n = n[len(n)-config.C.OpenAI.MaxMsg:]
+		}
+		userData.Store(userID, n)
+	}
+}
+
 // https://beta.openai.com/docs/api-reference/making-requests
-func completions(msg string, timeout time.Duration) (string, error) {
+func completions(userID string, msg string, timeout time.Duration) (string, error) {
 	start := time.Now()
 	msg = strings.TrimSpace(msg)
 	length := len([]rune(msg))
@@ -126,11 +159,9 @@ func completions(msg string, timeout time.Duration) (string, error) {
 		return "请说详细些...", nil
 	}
 	var r request
-	r.Model = "gpt-3.5-turbo"
-	r.Messages = []reqMessage{{
-		Role:    "user",
-		Content: msg,
-	}}
+	r.Model = config.C.OpenAI.Model
+	r.User = userID
+	r.Messages = loadHistoryMsg(userID, msg)
 
 	bs, err := json.Marshal(r)
 	if err != nil {
@@ -167,6 +198,7 @@ func completions(msg string, timeout time.Duration) (string, error) {
 		atomic.AddInt64(&totaltokens, int64(data.Usage.TotalTokens))
 
 		reply := replyMsg(data.Choices[0].Message.Content)
+		go saveSystemHistoryMsg(userID, reply)
 		log.Printf("本次:用时:%ds,花费约:%f¥,token:%d,请求:%d,回复:%d。 服务启动至今累计花费约:%f¥ \nQ:%s \nA:%s \n",
 			int(time.Since(start).Seconds()),
 			float32(data.Usage.TotalTokens/1000)*0.002*exchangeRate,

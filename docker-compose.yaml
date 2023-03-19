@@ -1,0 +1,12 @@
+version: '3.3'
+services:
+    openai:
+        restart: always
+        volumes:
+            - $PWD/log:/app/log
+            - $PWD/config:/app/config
+        ports:
+            - '80:80'
+        container_name: openai
+        image: 'hidden/openai:1.0.3'
+        network_mode: host

@@ -13,7 +13,10 @@ type conf struct {
 		Proxy string `json:"proxy"`
 	} `json:"http"`
 	OpenAI struct {
-		Key string `json:"key"`
+		Key     string `json:"key"`
+		Model   string `json:"model"`
+		MaxMsg  int    `json:"maxMsg"`
+		SlowMsg string `json:"slowMsg"`
 	} `json:"openai"`
 	Wechat struct {
 		Token string `json:"token"`
@@ -48,7 +51,7 @@ func init() {
 }
 
 func parseConfigFile() error {
-	filename := "./config.json"
+	filename := "./config/config.json"
 	f, err := os.Open(filename)
 	if err != nil {
 		return err

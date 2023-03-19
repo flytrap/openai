@@ -17,7 +17,6 @@ var (
 	success  = []byte("success")
 	warn     = "警告，检测到敏感词"
 	requests sync.Map // K - 消息ID ， V - chan string
-	users    sync.Map
 )
 
 func WechatCheck(w http.ResponseWriter, r *http.Request) {
@@ -83,9 +82,9 @@ func ReceiveMsg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		ch = make(chan string)
 		requests.Store(msg.MsgId, ch)
-		go func(id int64, msg string) {
+		go func(id int64, m string) {
 			// 15s不回复微信，则失效
-			result := openai.Query(msg, time.Millisecond*13500)
+			result := openai.Query(msg.FromUserName, m, time.Millisecond*13500)
 			ch <- result
 		}(msg.MsgId, msg.Content)
 	} else {
@@ -112,7 +111,7 @@ func Test(w http.ResponseWriter, r *http.Request) {
 		echoJson(w, "", warn)
 		return
 	}
-	s := openai.Query(msg, time.Second*180)
+	s := openai.Query("test", msg, time.Second*180)
 	echoJson(w, s, "")
 }
 
